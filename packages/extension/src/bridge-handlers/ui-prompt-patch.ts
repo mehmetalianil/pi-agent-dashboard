@@ -26,6 +26,7 @@ import type { BridgeInstance } from "./instance.js";
 export function patchUiForPromptBus(inst: BridgeInstance, ctx: any, promptBus: PromptBus): void {
     // Capture original ctx.ui method references BEFORE patching
     const originalNotify = ctx.ui.notify?.bind(ctx.ui);
+    const prevCustom = typeof ctx.ui.custom === "function" ? ctx.ui.custom.bind(ctx.ui) : undefined;
     const originals = {
       select: ctx.ui.select?.bind(ctx.ui) as ((q: string, opts: string[], extra?: any) => Promise<string | undefined>) | undefined,
       input: ctx.ui.input?.bind(ctx.ui) as ((q: string, placeholder?: string, extra?: any) => Promise<string | undefined>) | undefined,
@@ -221,5 +222,119 @@ export function patchUiForPromptBus(inst: BridgeInstance, ctx: any, promptBus: P
         send: (msg) => inst.connection.send(msg),
         originalNotify,
       });
+
+      // Bridge `pi-ask-user` custom components (`AskComponent` and `BatchAskComponent`)
+      // in RPC/headless dashboard mode where `prevCustom` resolves to `undefined`.
+      // Instead of letting `pi-ask-user` degrade to `askViaDialogs` (which strips
+      // option descriptions and asks batch questions one-by-one), route them
+      // through `ctx.ui.batch`, `ctx.ui.multiselect`, and `ctx.ui.select` with
+      // full Markdown `message` and `"title — description"` options.
+      (ctx.ui as any).custom = async (factory: any, customOpts?: any) => {
+        if (prevCustom) {
+          const nativeRes = await prevCustom(factory, customOpts);
+          if (nativeRes !== undefined) return nativeRes;
+        }
+        if (typeof factory !== "function") return undefined;
+
+        let comp: any;
+        try {
+          const tuiStub = { terminal: { rows: 24, columns: 80 }, requestRender: () => {} };
+          const themeStub = { fg: (_c: string, s: string) => s, bg: (_c: string, s: string) => s, bold: (s: string) => s };
+          const kbStub = { getKeys: () => [], matches: () => false };
+          comp = factory(tuiStub, themeStub, kbStub, () => {});
+        } catch {
+          return undefined;
+        }
+
+        const formatOpt = (o: { title: string; description?: string }) =>
+          typeof o?.description === "string" && o.description.trim()
+            ? `${o.title} — ${o.description.trim()}`
+            : String(o?.title ?? "");
+
+        const decodePickedTitle = (
+          val: string,
+          opts: Array<{ title: string; description?: string }>,
+        ): { title: string; isCustom: boolean } => {
+          const match = opts.find((o) => formatOpt(o) === val || o.title === val);
+          return match ? { title: match.title, isCustom: false } : { title: val, isCustom: true };
+        };
+
+        // 1. BatchAskComponent from `pi-ask-user`
+        if (comp && Array.isArray(comp.questions) && Array.isArray(comp.pages)) {
+          const mappedQuestions = comp.questions.map((q: any) => {
+            const qOpts = Array.isArray(q.options) ? q.options : [];
+            const method = q.allowMultiple
+              ? "multiselect"
+              : qOpts.length > 0
+                ? "select"
+                : "input";
+            return {
+              method,
+              title: q.question ?? "Question",
+              message: q.context,
+              options: qOpts.length > 0 ? qOpts.map(formatOpt) : undefined,
+              ...(method === "select" || method === "multiselect"
+                ? { allowOther: q.allowFreeform !== false }
+                : {}),
+            };
+          });
+          const batchTitle =
+            (typeof comp.heading === "string" && comp.heading.trim()) ||
+            comp.questions[0]?.question ||
+            "Questions";
+          const batchAns: Array<any> | undefined = await (ctx.ui as any).batch(
+            batchTitle,
+            mappedQuestions,
+          );
+          if (!Array.isArray(batchAns)) return null;
+          return comp.questions.map((q: any, i: number) => {
+            const a = batchAns[i];
+            const qOpts: Array<{ title: string; description?: string }> = Array.isArray(q.options) ? q.options : [];
+            if (qOpts.length === 0) {
+              const text = typeof a === "object" && a && "value" in a ? String(a.value ?? "").trim() : String(a ?? "").trim();
+              return text ? { status: "answered", response: { kind: "freeform", text } } : { status: "skipped" };
+            }
+            if (q.allowMultiple) {
+              const vals: string[] = Array.isArray(a?.values) ? a.values : Array.isArray(a) ? a : [];
+              const titles = vals.map((v) => decodePickedTitle(String(v), qOpts).title).filter(Boolean);
+              return titles.length > 0
+                ? { status: "answered", response: { kind: "selection", selections: titles } }
+                : { status: "skipped" };
+            }
+            const rawVal = typeof a === "object" && a && "value" in a ? String(a.value ?? "") : String(a ?? "");
+            if (!rawVal) return { status: "skipped" };
+            const decoded = decodePickedTitle(rawVal, qOpts);
+            return decoded.isCustom
+              ? { status: "answered", response: { kind: "freeform", text: decoded.title } }
+              : { status: "answered", response: { kind: "selection", selections: [decoded.title] } };
+          });
+        }
+
+        // 2. Single AskComponent from `pi-ask-user`
+        if (comp && typeof comp.question === "string" && Array.isArray(comp.options)) {
+          const qOpts: Array<{ title: string; description?: string }> = comp.options;
+          const formattedOpts = qOpts.map(formatOpt);
+          const msgOpts: Record<string, unknown> = {
+            ...(comp.context ? { message: comp.context } : {}),
+            ...(comp.allowFreeform !== false ? { allowOther: true } : {}),
+          };
+          if (comp.allowMultiple) {
+            const picked = await (ctx.ui as any).multiselect(comp.question, formattedOpts, msgOpts);
+            if (!Array.isArray(picked) || picked.length === 0) return null;
+            return {
+              kind: "selection",
+              selections: picked.map((v: string) => decodePickedTitle(String(v), qOpts).title),
+            };
+          }
+          const picked = await (ctx.ui as any).select(comp.question, formattedOpts, msgOpts);
+          if (typeof picked !== "string" || !picked.trim()) return null;
+          const decoded = decodePickedTitle(picked, qOpts);
+          return decoded.isCustom
+            ? { kind: "freeform", text: decoded.title }
+            : { kind: "selection", selections: [decoded.title] };
+        }
+
+        return undefined;
+      };
     }
 }
