@@ -5,10 +5,11 @@ import { Icon } from "@mdi/react";
 import type React from "react";
 import { useState } from "react";
 import { t as i18nT } from "../../lib/i18n/i18n.js";
+import { MarkdownContent } from "../preview/MarkdownContent.js";
 import { InlineMarkdown } from "./InlineMarkdown.js";
 import { InputComposer } from "./InputComposer.js";
 import { OtherOption } from "./OtherOption.js";
-import { isCancelOption, parseOption } from "./parseOption.js";
+import { isCancelOption, parseOption, splitPromptTitleAndMessage } from "./parseOption.js";
 import type { InteractiveRendererProps } from "./types.js";
 
 /**
@@ -77,7 +78,10 @@ function answerToText(q: SubQuestion, a: Answer | undefined): React.ReactNode {
 }
 
 export function BatchRenderer({ params, status, result, onRespond, onCancel }: InteractiveRendererProps) {
-  const title = (params.title as string) ?? "Questions";
+  const { title, message: batchMessage } = splitPromptTitleAndMessage(
+    (params.title as string) ?? "Questions",
+    params.message as string | undefined,
+  );
   const questions = ((params.questions as SubQuestion[]) ?? []).filter(Boolean);
   const resolvedAnswers = (result as any)?.answers as Answer[] | undefined;
 
@@ -108,6 +112,9 @@ export function BatchRenderer({ params, status, result, onRespond, onCancel }: I
           <span className="text-[var(--text-primary)] font-medium"><InlineMarkdown content={title} /></span>
           <span className="ml-auto text-green-400">{resolvedAnswers?.length ?? 0} answers</span>
         </div>
+        {batchMessage && (
+          <div className="px-4 pt-3 text-xs text-[var(--text-secondary)]"><MarkdownContent content={batchMessage} /></div>
+        )}
         <div className="p-3 flex flex-col gap-2">
           {questions.map((q, i) => (
             <ReviewRow key={i} num={i + 1} question={q} answer={resolvedAnswers?.[i]} />
@@ -191,6 +198,9 @@ export function BatchRenderer({ params, status, result, onRespond, onCancel }: I
 
       {/* Body */}
       <div className="px-4 py-4">
+        {batchMessage && (
+          <div className="text-xs text-[var(--text-secondary)] mb-3"><MarkdownContent content={batchMessage} /></div>
+        )}
         {onReview ? (
           <div className="flex flex-col gap-2">
             <div className="text-sm font-medium text-[var(--text-primary)] mb-1">{i18nT("common.reviewYourAnswers", undefined, "Review your answers")}</div>
@@ -265,13 +275,17 @@ function ReviewRow({
   answer: Answer | undefined;
   onEdit?: () => void;
 }) {
+  const { title: qTitle, message: qMessage } = splitPromptTitleAndMessage(question.title, question.message);
   return (
     <div className="flex items-start gap-3 px-3 py-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
       <span className="w-5 h-5 rounded grid place-items-center text-[11px] font-semibold bg-green-500/20 text-green-400 shrink-0">
         {num}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">{question.title}</div>
+        <div className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]"><InlineMarkdown content={qTitle} /></div>
+        {!onEdit && qMessage && (
+          <div className="text-xs text-[var(--text-secondary)] mt-1"><MarkdownContent content={qMessage} /></div>
+        )}
         <div className="text-xs text-[var(--text-primary)] font-medium mt-0.5">{answerToText(question, answer)}</div>
       </div>
       {onEdit && (
@@ -305,11 +319,12 @@ function StepBody({
   const options = question.options ?? [];
   const otherAllowed = isOtherAllowed({ allowOther: question.allowOther, options });
   const draft: OtherDraft = other ?? { active: false, text: "" };
+  const { title: qTitle, message: qMessage } = splitPromptTitleAndMessage(question.title, question.message);
   return (
     <div>
-      <div className="text-sm font-medium text-[var(--text-primary)] mb-1">{question.title}</div>
-      {question.message && (
-        <div className="text-[11px] text-[var(--text-tertiary)] mb-3"><InlineMarkdown content={question.message} /></div>
+      <div className="text-sm font-medium text-[var(--text-primary)] mb-1"><InlineMarkdown content={qTitle} /></div>
+      {qMessage && (
+        <div className="text-xs text-[var(--text-secondary)] mb-3"><MarkdownContent content={qMessage} /></div>
       )}
       {question.method === "input" && (
         <InputComposer
@@ -363,8 +378,8 @@ function StepBody({
                 }
               >
                 <span className="min-w-0">
-                  <span className="block text-xs font-medium">{oTitle}</span>
-                  {description && <span className="block text-[11px] text-[var(--text-tertiary)] mt-0.5">{description}</span>}
+                  <span className="block text-xs font-medium"><InlineMarkdown content={oTitle} /></span>
+                  {description && <span className="block text-[11px] text-[var(--text-tertiary)] mt-0.5"><InlineMarkdown content={description} /></span>}
                 </span>
               </button>
             );
@@ -434,6 +449,7 @@ function MultiselectStep({
     <div className="flex flex-col gap-1">
       {options.map((option) => {
         const on = values.includes(option);
+        const { title: oTitle, description } = parseOption(option);
         return (
           <label
             key={option}
@@ -444,7 +460,12 @@ function MultiselectStep({
             }
           >
             <input type="checkbox" checked={on} onChange={() => toggle(option)} className="accent-blue-500" />
-            <span>{option}</span>
+            <span className="min-w-0">
+              <span className="block"><InlineMarkdown content={oTitle} /></span>
+              {description && (
+                <span className="block text-[11px] text-[var(--text-tertiary)] mt-0.5"><InlineMarkdown content={description} /></span>
+              )}
+            </span>
           </label>
         );
       })}

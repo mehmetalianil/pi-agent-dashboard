@@ -6,11 +6,14 @@ import { t as i18nT } from "../../lib/i18n/i18n.js";
 import { MarkdownContent } from "../preview/MarkdownContent.js";
 import { InlineMarkdown } from "./InlineMarkdown.js";
 import { InputComposer } from "./InputComposer.js";
+import { splitPromptTitleAndMessage } from "./parseOption.js";
 import type { InteractiveRendererProps } from "./types.js";
 
 export function InputRenderer({ params, status, result, onRespond, onCancel }: InteractiveRendererProps) {
-  const title = params.title as string;
-  const message = params.message as string | undefined;
+  const { title, message } = splitPromptTitleAndMessage(
+    params.title as string,
+    params.message as string | undefined,
+  );
   const placeholder = params.placeholder as string | undefined;
   const enteredValue = (result as any)?.value as string | undefined;
   const imageCount = ((result as any)?.images as ImageContent[] | undefined)?.length ?? 0;

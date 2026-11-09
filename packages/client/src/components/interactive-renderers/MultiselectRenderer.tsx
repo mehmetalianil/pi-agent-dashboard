@@ -7,11 +7,14 @@ import { MarkdownContent } from "../preview/MarkdownContent.js";
 import { AnsweredOption } from "./AnsweredOption.js";
 import { InlineMarkdown } from "./InlineMarkdown.js";
 import { OtherOption } from "./OtherOption.js";
+import { parseOption, splitPromptTitleAndMessage } from "./parseOption.js";
 import type { InteractiveRendererProps } from "./types.js";
 
 export function MultiselectRenderer({ params, status, result, onRespond, onCancel }: InteractiveRendererProps) {
-  const title = params.title as string;
-  const message = params.message as string | undefined;
+  const { title, message } = splitPromptTitleAndMessage(
+    params.title as string,
+    params.message as string | undefined,
+  );
   const options = (params.options as string[]) ?? [];
   const selectedValues = (result as any)?.values as string[] | undefined;
 
@@ -70,9 +73,17 @@ export function MultiselectRenderer({ params, status, result, onRespond, onCance
           <div className="text-xs text-[var(--text-secondary)] mb-2 ml-6"><MarkdownContent content={message} /></div>
         )}
         <div className="flex flex-col gap-1 ml-6">
-          {options.map((option) => (
-            <AnsweredOption key={option} title={option} picked={picks.includes(option)} />
-          ))}
+          {options.map((option) => {
+            const { title: oTitle, description } = parseOption(option);
+            return (
+              <AnsweredOption
+                key={option}
+                title={oTitle}
+                description={description}
+                picked={picks.includes(option)}
+              />
+            );
+          })}
           {picks
             .filter((v) => !options.includes(v))
             .map((v) => (
@@ -110,20 +121,28 @@ export function MultiselectRenderer({ params, status, result, onRespond, onCance
             <div className="border-t border-[var(--border-subtle)] my-1" />
           </>
         )}
-        {options.map((option) => (
-          <label
-            key={option}
-            className="flex items-center gap-2 text-xs cursor-pointer hover:bg-[var(--bg-surface)] rounded px-2 py-1 transition-colors"
-          >
-            <input
-              type="checkbox"
-              checked={checked.has(option)}
-              onChange={() => toggle(option)}
-              className="accent-blue-500"
-            />
-            <span className="text-[var(--text-primary)]">{option}</span>
-          </label>
-        ))}
+        {options.map((option) => {
+          const { title: oTitle, description } = parseOption(option);
+          return (
+            <label
+              key={option}
+              className="flex items-center gap-2 text-xs cursor-pointer hover:bg-[var(--bg-surface)] rounded px-2 py-1 transition-colors"
+            >
+              <input
+                type="checkbox"
+                checked={checked.has(option)}
+                onChange={() => toggle(option)}
+                className="accent-blue-500"
+              />
+              <span className="min-w-0">
+                <span className="block text-[var(--text-primary)]"><InlineMarkdown content={oTitle} /></span>
+                {description && (
+                  <span className="block text-[11px] text-[var(--text-tertiary)] mt-0.5"><InlineMarkdown content={description} /></span>
+                )}
+              </span>
+            </label>
+          );
+        })}
         {otherAllowed && (
           <OtherOption
             variant="checkbox"

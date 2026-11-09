@@ -7,12 +7,14 @@ import { MarkdownContent } from "../preview/MarkdownContent.js";
 import { AnsweredOption } from "./AnsweredOption.js";
 import { InlineMarkdown } from "./InlineMarkdown.js";
 import { OtherOption } from "./OtherOption.js";
-import { isCancelOption, parseOption } from "./parseOption.js";
+import { isCancelOption, parseOption, splitPromptTitleAndMessage } from "./parseOption.js";
 import type { InteractiveRendererProps } from "./types.js";
 
 export function SelectRenderer({ params, status, result, onRespond, onCancel }: InteractiveRendererProps) {
-  const title = params.title as string;
-  const message = params.message as string | undefined;
+  const { title, message } = splitPromptTitleAndMessage(
+    params.title as string,
+    params.message as string | undefined,
+  );
   // Non-string options are dropped (parseOption would throw on them). See change: add-ask-user-inline-other (X2).
   const options = Array.isArray(params.options) ? params.options.filter((o): o is string => typeof o === "string") : [];
   const selectedValue = (result as any)?.value as string | undefined;
@@ -144,9 +146,9 @@ function OptionRow({
       }
     >
       <span className="min-w-0">
-        <span className="block text-[13px] font-medium">{title}</span>
+        <span className="block text-[13px] font-medium">{cancel ? title : <InlineMarkdown content={title} />}</span>
         {description && (
-          <span className="block text-[12px] text-[var(--text-secondary)] mt-0.5">{description}</span>
+          <span className="block text-[12px] text-[var(--text-secondary)] mt-0.5"><InlineMarkdown content={description} /></span>
         )}
       </span>
     </button>

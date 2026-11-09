@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { BatchRenderer } from "../interactive-renderers/BatchRenderer.js";
 
 afterEach(cleanup);
@@ -184,5 +184,33 @@ describe("BatchRenderer inline Other", () => {
     fireEvent.click(screen.getByText("B"));
     expect(screen.queryByRole("textbox", { name: "Other answer" })).toBeNull();
     expect(next().disabled).toBe(false);
+  });
+
+  it("renders full Markdown tables in sub-question message and inline Markdown in option labels", () => {
+    const mdTable = "| Part | Drain |\n| --- | --- |\n| FP6276B | 0.1 uA |";
+    const { container } = render(
+      <BatchRenderer
+        requestId="r-md"
+        method="batch"
+        params={{
+          title: "Power Architecture",
+          questions: [
+            {
+              method: "select",
+              title: "Choose `BOOST_IC` topology",
+              message: mdTable,
+              options: ["`FP6276B` — **0.1 uA** synchronous disconnect", "`FP6298` — 42 uA async"],
+            },
+          ],
+        }}
+        status="pending"
+        onRespond={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(container.querySelector("table")).toBeTruthy();
+    expect(screen.getByText("BOOST_IC").tagName).toBe("CODE");
+    expect(screen.getAllByText("FP6276B").some((el) => el.tagName === "CODE")).toBe(true);
+    expect(screen.getByText("0.1 uA", { selector: "strong" })).toBeTruthy();
   });
 });

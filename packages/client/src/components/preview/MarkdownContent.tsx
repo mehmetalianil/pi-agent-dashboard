@@ -663,7 +663,15 @@ export const MarkdownContent = React.memo(function MarkdownContent({ content, co
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const onLoopbackClick = useLoopbackLinkOpen();
-  const { resolved: theme, themeName } = useThemeContext();
+  let theme: "dark" | "light" = "dark";
+  let themeName = "base";
+  try {
+    const themeCtx = useThemeContext();
+    theme = themeCtx.resolved;
+    themeName = themeCtx.themeName;
+  } catch {
+    // Fallback for standalone unit tests mounted without ThemeProvider
+  }
   const syntaxStyle = useMemo(() => getSyntaxTheme(theme, themeName), [theme, themeName]);
 
   // Wide char width fixer — disabled pending further refinement

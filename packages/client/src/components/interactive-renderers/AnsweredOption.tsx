@@ -1,6 +1,7 @@
-import React from "react";
-import { Icon } from "@mdi/react";
 import { mdiCheck } from "@mdi/js";
+import { Icon } from "@mdi/react";
+import React from "react";
+import { InlineMarkdown } from "./InlineMarkdown.js";
 
 /**
  * AnsweredOption — one row in a resolved select/multiselect/confirm card.
@@ -43,9 +44,13 @@ export function AnsweredOption({
       </span>
       <span className="min-w-0">
         {label && <span className="mr-1 text-[var(--text-tertiary)]">{label}</span>}
-        <span data-testid={label ? "answered-other-text" : undefined}>{title}</span>
+        <span data-testid={label ? "answered-other-text" : undefined}>
+          {label ? title : <InlineMarkdown content={title} />}
+        </span>
         {description && (
-          <span className="block text-[var(--text-tertiary)]">{description}</span>
+          <span className="block text-[var(--text-tertiary)]">
+            {label ? description : <InlineMarkdown content={description} />}
+          </span>
         )}
       </span>
     </div>

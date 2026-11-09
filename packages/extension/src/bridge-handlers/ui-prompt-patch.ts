@@ -9,9 +9,9 @@ import type { ImageContent } from "@blackbelt-technology/pi-dashboard-shared/typ
 import { MAX_PER_MESSAGE_BYTES as ATTACH_MAX_PER_MESSAGE_BYTES, persistAttachment } from "../ask-user-attachments.js";
 import { decodeMultiselectAnswer } from "../multiselect-decode.js";
 import { createNotifyProxy } from "../notify-proxy.js";
+import type { PromptBus } from "../prompt-bus.js";
 import { buildPromptMeta } from "../prompt-meta.js";
 import { createTuiPromptAdapter } from "../tui-prompt-adapter.js";
-import type { PromptBus } from "../prompt-bus.js";
 import type { BridgeInstance } from "./instance.js";
 
 /**
@@ -64,13 +64,36 @@ export function patchUiForPromptBus(inst: BridgeInstance, ctx: any, promptBus: P
       // (validated; see prompt-meta.ts). See change: add-browser-editor-pane-tab.
       const buildMeta = (opts: any, explicitMessage?: string) => buildPromptMeta(opts, explicitMessage);
 
-      (ctx.ui as any).select = (title: string, options: string[], opts?: any) =>
-        bus.request({ pipeline: "command", type: "select", question: title, options, metadata: buildMeta(opts) })
-          .then(r => r.cancelled ? undefined : r.answer);
+      // Extract `\n\nContext:\n` appended by `pi-ask-user` RPC fallback into
+      // `metadata.message` when the caller did not pass `opts.message`, so the
+      // dashboard renders the context block through full `MarkdownContent`.
+      const splitEmbeddedContext = (
+        rawTitle: string,
+        opts?: any,
+      ): { question: string; explicitMessage?: string } => {
+        if (typeof rawTitle !== "string" || (opts && typeof opts.message === "string" && opts.message.length > 0)) {
+          return { question: rawTitle };
+        }
+        const marker = "\n\nContext:\n";
+        const idx = rawTitle.indexOf(marker);
+        if (idx === -1) return { question: rawTitle };
+        const head = rawTitle.slice(0, idx).trim();
+        const body = rawTitle.slice(idx + marker.length).trim();
+        if (!head || !body) return { question: rawTitle };
+        return { question: head, explicitMessage: body };
+      };
 
-      (ctx.ui as any).input = (title: string, placeholder?: string, opts?: any) =>
-        bus.request({ pipeline: "command", type: "input", question: title, defaultValue: placeholder, metadata: buildMeta(opts) })
+      (ctx.ui as any).select = (title: string, options: string[], opts?: any) => {
+        const { question, explicitMessage } = splitEmbeddedContext(title, opts);
+        return bus.request({ pipeline: "command", type: "select", question, options, metadata: buildMeta(opts, explicitMessage) })
           .then(r => r.cancelled ? undefined : r.answer);
+      };
+
+      (ctx.ui as any).input = (title: string, placeholder?: string, opts?: any) => {
+        const { question, explicitMessage } = splitEmbeddedContext(title, opts);
+        return bus.request({ pipeline: "command", type: "input", question, defaultValue: placeholder, metadata: buildMeta(opts, explicitMessage) })
+          .then(r => r.cancelled ? undefined : r.answer);
+      };
 
       // Persist pasted images for an ask_user input answer to disk + emit one
       // asset_register per new hash (dashboard thumbnail). Returns absolute
@@ -112,13 +135,15 @@ export function patchUiForPromptBus(inst: BridgeInstance, ctx: any, promptBus: P
       // to: undefined (cancel) | string (no images) | {value, attachments}
       // (images). See change: add-ask-user-input-multiline-paste, design.md
       // Decision 1.
-      (ctx.ui as any).inputWithImages = (title: string, placeholder?: string, opts?: any) =>
-        bus.request({ pipeline: "command", type: "input", question: title, defaultValue: placeholder, metadata: buildMeta(opts) })
+      (ctx.ui as any).inputWithImages = (title: string, placeholder?: string, opts?: any) => {
+        const { question, explicitMessage } = splitEmbeddedContext(title, opts);
+        return bus.request({ pipeline: "command", type: "input", question, defaultValue: placeholder, metadata: buildMeta(opts, explicitMessage) })
           .then(r => {
             if (r.cancelled) return undefined;
             const atts = r.images?.length ? persistAnswerImages(r.images) : [];
             return atts.length ? { value: r.answer ?? "", attachments: atts } : (r.answer ?? "");
           });
+      };
 
       (ctx.ui as any).confirm = (title: string, message?: string, opts?: any) =>
         bus.request({ pipeline: "command", type: "confirm", question: title, metadata: buildMeta(opts, message) })
@@ -144,14 +169,16 @@ export function patchUiForPromptBus(inst: BridgeInstance, ctx: any, promptBus: P
         // eslint-disable-next-line no-console
         console.warn("[bridge] ctx.ui.multiselect already exists — overriding for PromptBus routing");
       }
-      (ctx.ui as any).multiselect = (title: string, options: string[], opts?: any) =>
-        bus.request({
+      (ctx.ui as any).multiselect = (title: string, options: string[], opts?: any) => {
+        const { question, explicitMessage } = splitEmbeddedContext(title, opts);
+        return bus.request({
           pipeline: "command",
           type: "multiselect",
-          question: title,
+          question,
           options,
-          metadata: buildMeta(opts),
+          metadata: buildMeta(opts, explicitMessage),
         }).then(decodeMultiselectAnswer);
+      };
 
       // ── Batch ────────────────────────────────────────────────────
       // ctx.ui.batch is NOT a built-in pi method. The ask_user tool calls it

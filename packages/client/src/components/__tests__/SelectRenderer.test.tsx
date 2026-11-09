@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { SelectRenderer } from "../interactive-renderers/SelectRenderer.js";
 import { ThemeProvider } from "../settings/ThemeProvider.js";
 
@@ -263,5 +263,26 @@ describe("SelectRenderer inline Other", () => {
         <SelectRenderer requestId="r" method="select" params={{ title: "T", options: [1, "A"] as unknown as string[], allowOther: true }} status="pending" onRespond={vi.fn()} onCancel={vi.fn()} />,
       ),
     ).not.toThrow();
+  });
+
+  it("splits embedded Context:\\n markdown from title and renders inline markdown in option rows", () => {
+    const combinedTitle = "Which regulator?\n\nContext:\n| IC | Iq |\n| --- | --- |\n| TPS61023 | 0.1 uA |";
+    const { container } = render(
+      <SelectRenderer
+        requestId="r-ctx"
+        method="select"
+        params={{
+          title: combinedTitle,
+          options: ["`TPS61023` — **True** disconnect", "`MT3608` — External diode"],
+        }}
+        status="pending"
+        onRespond={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Which regulator?")).toBeTruthy();
+    expect(container.querySelector("table")).toBeTruthy();
+    expect(screen.getAllByText("TPS61023").some((el) => el.tagName === "CODE")).toBe(true);
+    expect(screen.getByText("True").tagName).toBe("STRONG");
   });
 });

@@ -124,10 +124,34 @@ function rescueAllowOther(obj: Record<string, unknown>): void {
     typeof v === "boolean" ? v : v === "true" ? true : v === "false" ? false : undefined;
   const other = coerce(obj.allowOther);
   const custom = coerce(obj.allowCustom);
+  const freeform = coerce(obj.allowFreeform);
   delete obj.allowCustom;
   delete obj.allowOther;
-  const effective = other ?? custom;
+  delete obj.allowFreeform;
+  const effective = other ?? custom ?? freeform;
   if (effective !== undefined) obj.allowOther = effective;
+}
+
+/** Normalize `{ title, description }` option objects from `pi-ask-user` into `"title — description"` strings. */
+function normalizeOptionObjects(options: unknown[]): string[] | undefined {
+  if (
+    options.length > 0 &&
+    options.every(
+      (o) =>
+        typeof o === "string" ||
+        (o !== null && typeof o === "object" && !Array.isArray(o) && typeof (o as any).title === "string"),
+    ) &&
+    options.some((o) => o !== null && typeof o === "object")
+  ) {
+    return options.map((o) => {
+      if (typeof o === "string") return o;
+      const rec = o as Record<string, unknown>;
+      const t = String(rec.title).trim();
+      const d = typeof rec.description === "string" ? rec.description.trim() : "";
+      return d ? `${t} — ${d}` : t;
+    });
+  }
+  return undefined;
 }
 
 /** Custom (non-option) values in a select string / multiselect array answer. */
@@ -158,6 +182,11 @@ function normalizeSubQuestion(
     else if (typeof obj.header === "string") obj.title = obj.header;
   }
 
+  // Rename `context` → `message` (only if message missing).
+  if (obj.message === undefined && typeof obj.context === "string") {
+    obj.message = obj.context;
+  }
+
   // Parse stringified options.
   if (typeof obj.options === "string") {
     try {
@@ -166,6 +195,12 @@ function normalizeSubQuestion(
     } catch {
       /* leave as-is */
     }
+  }
+
+  // Convert options: [{title, description}] → ["title — description", ...].
+  if (Array.isArray(obj.options)) {
+    const converted = normalizeOptionObjects(obj.options);
+    if (converted) obj.options = converted;
   }
 
   // Convert options: [{label, value}] → [label, ...] with a warning.
@@ -177,6 +212,18 @@ function normalizeSubQuestion(
       "ask_user: options with {label, value} pairs are not supported — only labels were used. Send options as string[].",
     );
   }
+
+  // Infer `method` when omitted (`pi-ask-user` sub-questions use `allowMultiple` + `options`).
+  if (!obj.method) {
+    if (obj.allowMultiple === true) {
+      obj.method = "multiselect";
+    } else if (Array.isArray(obj.options) && obj.options.length > 0) {
+      obj.method = "select";
+    } else {
+      obj.method = "input";
+    }
+  }
+  delete obj.allowMultiple;
 
   rescueAllowOther(obj);
 
@@ -288,9 +335,12 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
         }
       }
 
-      // 2. `question` → `title` (only if title missing).
+      // 2. `question` → `title` (only if title missing) and `context` → `message` (only if message missing).
       if (obj.title === undefined && typeof obj.question === "string") {
         obj.title = obj.question;
+      }
+      if (obj.message === undefined && typeof obj.context === "string") {
+        obj.message = obj.context;
       }
 
       // 3. Stringified top-level `options` for single-method calls.
@@ -299,6 +349,10 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
           const parsed = JSON.parse(obj.options);
           if (Array.isArray(parsed)) obj.options = parsed;
         } catch { /* leave as-is */ }
+      }
+      if (Array.isArray(obj.options)) {
+        const converted = normalizeOptionObjects(obj.options);
+        if (converted) obj.options = converted;
       }
 
       // 4. Batch rescue: `questions` as a JSON string → parsed array.
@@ -310,13 +364,23 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
       }
 
       // 5. If `questions` is a non-empty array and `method` is absent, synthesize `method: "batch"`.
+      //    Otherwise, if `method` is absent (`pi-ask-user` style), infer from `allowMultiple` / `options`.
       if (
         !obj.method &&
         Array.isArray(obj.questions) &&
         obj.questions.length > 0
       ) {
         obj.method = "batch";
+      } else if (!obj.method) {
+        if (obj.allowMultiple === true) {
+          obj.method = "multiselect";
+        } else if (Array.isArray(obj.options) && obj.options.length > 0) {
+          obj.method = "select";
+        } else if (typeof obj.title === "string") {
+          obj.method = "input";
+        }
       }
+      delete obj.allowMultiple;
 
       // 6. For any batch call (synthesized or explicit), backfill a missing outer `title`
       //    from the first sub-question so the schema validates. Opus frequently sends

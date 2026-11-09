@@ -836,4 +836,49 @@ describe("ask_user inline Other opt-in", () => {
     const empty = tool.prepareArguments({});
     for (const k of ["method", "title", "questions", "allowOther"]) expect(k in empty).toBe(false);
   });
+
+  it("rescues pi-ask-user context, {title, description} options, and inferred method", () => {
+    const { tool } = setup();
+    const single = tool.prepareArguments({
+      question: "Pick boost IC",
+      context: "| IC | Iq |\n| --- | --- |\n| FP6276B | 0.1 uA |",
+      options: [
+        { title: "FP6276B", description: "Synchronous load disconnect" },
+        { title: "FP6298", description: "Asynchronous + Schottky" },
+      ],
+      allowFreeform: true,
+    });
+    expect(single).toMatchObject({
+      method: "select",
+      title: "Pick boost IC",
+      message: "| IC | Iq |\n| --- | --- |\n| FP6276B | 0.1 uA |",
+      options: [
+        "FP6276B — Synchronous load disconnect",
+        "FP6298 — Asynchronous + Schottky",
+      ],
+      allowOther: true,
+    });
+
+    const batch = tool.prepareArguments({
+      question: "Round 2 Decisions",
+      questions: [
+        {
+          question: "Select regulator",
+          context: "See datasheet comparison table",
+          options: [{ title: "Option A", description: "Sync" }],
+          allowMultiple: true,
+          allowFreeform: false,
+        },
+      ],
+    });
+    expect(batch.method).toBe("batch");
+    expect(batch.title).toBe("Round 2 Decisions");
+    expect(batch.questions[0]).toMatchObject({
+      method: "multiselect",
+      title: "Select regulator",
+      message: "See datasheet comparison table",
+      options: ["Option A — Sync"],
+      allowOther: false,
+    });
+  });
 });
