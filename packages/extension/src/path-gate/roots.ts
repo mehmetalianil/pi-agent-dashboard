@@ -116,7 +116,7 @@ export class RootsProvider {
       checkout = gen === this.probeGen && this.probeCwd === cwd ? r : [];
     }
     const workspace = [realpathOr(cwd), ...checkout];
-    return { workspace, grants, ...this.staticRoots() };
+    return { workspace, grants, ...this.staticRoots(cwd) };
   }
 
   /** True when probe has settled (in-root latency budget applies from then). */
@@ -124,14 +124,71 @@ export class RootsProvider {
     return this.settled !== null;
   }
 
-  private staticRoots(): Omit<GateRoots, "grants" | "workspace"> {
+  private staticRoots(cwd: string): Omit<GateRoots, "grants" | "workspace"> {
     const res = this.opts.getPiResources();
     const sessionDir = this.opts.getSessionDir();
-    const key = JSON.stringify([res, sessionDir]);
+    const key = JSON.stringify([res, sessionDir, cwd]);
     if (this.cachedStatic && key === this.cachedKey) return this.cachedStatic;
-    const ro = [res.agentDir, res.docsDir, ...res.skillDirs, ...res.contextFiles]
-      .filter((x): x is string => !!x)
-      .map(realpathOr);
+    const roSet = new Set<string>();
+    const addRo = (p: string | undefined): void => {
+      if (!p) return;
+      roSet.add(realpathOr(p));
+    };
+    addRo(res.agentDir);
+    addRo(res.docsDir);
+    for (const s of res.skillDirs) addRo(s);
+    for (const c of res.contextFiles) addRo(c);
+
+    // Resolve symlinked entries inside `res.agentDir` (e.g. ~/.pi/agent/{extensions,scripts,agents,skills,...})
+    if (res.agentDir) {
+      try {
+        for (const ent of fs.readdirSync(res.agentDir, { withFileTypes: true })) {
+          if (ent.name === "sessions" || ent.name === "projects") continue;
+          if (ent.isSymbolicLink() || ent.isDirectory()) {
+            addRo(nodePath.join(res.agentDir, ent.name));
+          }
+        }
+      } catch {
+        /* ignore missing or unreadable agentDir */
+      }
+    }
+
+    // Walk ancestor directories from `cwd` upward: add upstream `.pi/<tool-dir>` (excluding `projects` and `sessions`),
+    // `<ancestor>/AGENTS.md`, and `<ancestor>/docs/kb` as read-only roots so downstream project folders can read
+    // upstream harness scripts, extensions, skills, and KB docs without exposing sibling projects or granting write access.
+    if (cwd) {
+      let cur = realpathOr(cwd);
+      for (let depth = 0; depth < 8; depth++) {
+        const dotPi = nodePath.join(cur, ".pi");
+        try {
+          if (fs.statSync(dotPi).isDirectory()) {
+            for (const ent of fs.readdirSync(dotPi, { withFileTypes: true })) {
+              if (ent.name === "projects" || ent.name === "sessions") continue;
+              addRo(nodePath.join(dotPi, ent.name));
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+        const agentsMd = nodePath.join(cur, "AGENTS.md");
+        try {
+          if (fs.existsSync(agentsMd)) addRo(agentsMd);
+        } catch {
+          /* ignore */
+        }
+        const docsKb = nodePath.join(cur, "docs", "kb");
+        try {
+          if (fs.statSync(docsKb).isDirectory()) addRo(docsKb);
+        } catch {
+          /* ignore */
+        }
+        const parent = nodePath.dirname(cur);
+        if (!parent || parent === cur) break;
+        cur = parent;
+      }
+    }
+
+    const ro = Array.from(roSet);
     const rw = [os.tmpdir(), ...(nodePath.sep === "/" ? ["/tmp"] : []), ...(sessionDir ? [sessionDir] : [])].map(realpathOr);
     this.cachedKey = key;
     this.cachedStatic = { readOnly: ro, readWrite: rw };

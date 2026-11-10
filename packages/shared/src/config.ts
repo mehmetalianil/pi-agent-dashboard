@@ -1296,7 +1296,7 @@ export interface DashboardConfig {
    * forwarding header (`ssh -L`, socat), which is otherwise undetectable. Absent / any
    * other value → automatic detection. See change: improve-canvas-html-and-url-ux (D5).
    */
-  liveServer?: { previewExposure?: "exposed" };
+  liveServer?: { previewExposure?: "exposed" | "local-only" };
   /** Merged trustedNetworks + auth.bypassHosts (deduplicated). Computed at load time. */
   resolvedTrustedNetworks: string[];
   /** CORS allowed origins for cross-origin client hosting */
@@ -2820,7 +2820,9 @@ export function loadConfig(): DashboardConfig {
       trustedNetworks: parseTrustedNetworks(parsed.trustedNetworks),
       ...(parseNetworkConfig(parsed.network) ? { network: parseNetworkConfig(parsed.network) } : {}),
       requireLocalProof: typeof parsed.requireLocalProof === "boolean" ? parsed.requireLocalProof : true,
-      ...(parsed.liveServer?.previewExposure === "exposed" ? { liveServer: { previewExposure: "exposed" as const } } : {}),
+      ...(parsed.liveServer?.previewExposure === "exposed" || parsed.liveServer?.previewExposure === "local-only"
+        ? { liveServer: { previewExposure: parsed.liveServer.previewExposure } }
+        : {}),
       resolvedTrustedNetworks: [],
       cors: {
         allowedOrigins: Array.isArray(parsed.cors?.allowedOrigins)

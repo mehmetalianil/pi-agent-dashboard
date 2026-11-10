@@ -51,6 +51,7 @@ export function computeExposure(args: {
   configOverride?: string;
 }): LiveExposure {
   if (args.configOverride === "exposed") return "exposed";
+  if (args.configOverride === "local-only") return "local-only";
   if (args.forwardedSeen) return "exposed";
   if (args.endpoints.length > 0) return "exposed";
   return isLoopbackBindHost(args.bindHost) ? "local-only" : "exposed";

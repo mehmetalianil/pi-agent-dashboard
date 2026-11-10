@@ -128,4 +128,34 @@ describe("RootsProvider", () => {
     expect(await withBound(new Promise<number>(() => {}), 5, 7)).toBe(7);
     expect(await withBound(Promise.reject(new Error("x")), 50, 8)).toBe(8);
   });
+
+  it("includes symlinked agentDir children and ancestor .pi tool dirs in readOnly while excluding sibling .pi/projects", async () => {
+    const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "pg-upstream-"));
+    const harness = nodePath.join(root, "test-pi");
+    const extDir = nodePath.join(harness, ".pi", "extensions");
+    const scriptsDir = nodePath.join(harness, ".pi", "scripts");
+    const kbDir = nodePath.join(harness, "docs", "kb");
+    const projA = nodePath.join(harness, ".pi", "projects", "matter-radiator-knob");
+    const projB = nodePath.join(harness, ".pi", "projects", "vibe-gemini");
+    const agentDir = nodePath.join(root, "home-pi-agent");
+
+    for (const d of [extDir, scriptsDir, kbDir, projA, projB, agentDir]) {
+      fs.mkdirSync(d, { recursive: true });
+    }
+    fs.symlinkSync(extDir, nodePath.join(agentDir, "extensions"));
+    fs.symlinkSync(scriptsDir, nodePath.join(agentDir, "scripts"));
+
+    const p = new RootsProvider({
+      getCwd: () => projA,
+      getSessionDir: () => undefined,
+      getPiResources: () => ({ agentDir, skillDirs: [], contextFiles: [] }),
+      probe: async () => [projA],
+    });
+    const r = await p.roots([], true);
+    expect(r.readOnly).toContain(fs.realpathSync(extDir));
+    expect(r.readOnly).toContain(fs.realpathSync(scriptsDir));
+    expect(r.readOnly).toContain(fs.realpathSync(kbDir));
+    expect(r.readOnly).not.toContain(fs.realpathSync(nodePath.join(harness, ".pi", "projects")));
+    expect(r.readOnly).not.toContain(fs.realpathSync(projB));
+  });
 });
