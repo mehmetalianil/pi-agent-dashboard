@@ -242,7 +242,12 @@ export function createPreviewEgress(deps: PreviewEgressDeps): PreviewEgress {
   const grantedFor = (grant: LiveCapabilityGrant): string[] => {
     const project = projectKeyFor(grant);
     const projectGrants = project ? deps.projectGrants(project) : [];
-    return [...new Set([...projectGrants, ...deps.allowOnce(grant.viewerId)])];
+    const set = new Set([...projectGrants, ...deps.allowOnce(grant.viewerId)]);
+    if (set.has("https://fonts.googleapis.com") || set.has("https://fonts.gstatic.com")) {
+      set.add("https://fonts.googleapis.com");
+      set.add("https://fonts.gstatic.com");
+    }
+    return [...set];
   };
 
   const scanFile = async (root: string, file: string): Promise<ScanOutcome> => {
