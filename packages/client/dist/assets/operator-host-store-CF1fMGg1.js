@@ -1,0 +1,1 @@
+import{a as n}from"./react-vendor-a_xqAy5H.js";let r=null;const e=new Set;function o(){return r}function c(t){if(r!==t){r=t;for(const s of e)s()}}function u(t){return e.add(t),()=>{e.delete(t)}}function p(){return n.useSyncExternalStore(u,o,o)}export{c as s,p as u};

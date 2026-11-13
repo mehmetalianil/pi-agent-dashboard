@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "pluginRegistryHash": "f5a9e2c54dac362c59d5edf99506c7478260a56452f05e3b7b8eaa57da981bc7",
+  "fixturePolicy": "excluded",
+  "bundledPluginIds": [
+    "apple-tools",
+    "automation",
+    "blackhole",
+    "browser",
+    "chat-gateway",
+    "context-mode-settings",
+    "cost-estimator",
+    "craft-web",
+    "flows",
+    "flows-anthropic-bridge",
+    "gmail",
+    "goal",
+    "grammar",
+    "hermes-memory",
+    "kb",
+    "mcp-client",
+    "obs-studio",
+    "quota",
+    "roles",
+    "skill-atlas",
+    "subagents",
+    "system-one",
+    "team",
+    "web-access"
+  ]
+}
