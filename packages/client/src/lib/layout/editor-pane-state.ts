@@ -181,16 +181,17 @@ function activateAt(openFiles: OpenFile[], index: number, autoOpened: boolean): 
  */
 function reduceOpenFile(state: EditorPaneState, action: Extract<EditorPaneAction, { type: "openFile" }>): EditorPaneState {
   const next = reduceOpenFileBase(state, action);
-  if (!action.bump) return next;
   const i = next.openFiles.findIndex((f) => f.path === action.path);
   const was = state.openFiles.findIndex((f) => f.path === action.path);
   if (i < 0 || was < 0) return next; // a brand-new tab has nothing to reload
+  if (!action.bump && next.openFiles[i].viewer !== "live-server") return next;
   const openFiles = [...next.openFiles];
-  // The tab that WAS active keeps its content and offers a reload; any other tab reloads.
-  openFiles[i] =
-    was === state.activeIndex
-      ? { ...openFiles[i], updatedByAgent: true }
-      : { ...openFiles[i], reloadNonce: (openFiles[i].reloadNonce ?? 0) + 1 };
+  // Auto-reload the tab immediately without prompting "Updated by the agent · Reload"
+  openFiles[i] = {
+    ...openFiles[i],
+    updatedByAgent: false,
+    reloadNonce: (openFiles[i].reloadNonce ?? 0) + 1,
+  };
   return { ...next, openFiles };
 }
 

@@ -30,8 +30,14 @@ export interface OpenCanvasOpts {
 
 export type ServerOpenStatus = "idle" | "probing" | "not-running" | "not-responding";
 
+const stripHash = (path: string): string => {
+  const hashIdx = path.indexOf("#");
+  return hashIdx >= 0 ? path.slice(0, hashIdx) : path;
+};
+
 const isHtmlPath = (cwd: string, path: string): boolean => {
-  const abs = path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) ? path : `${cwd}/${path}`;
+  const clean = stripHash(path);
+  const abs = clean.startsWith("/") || /^[A-Za-z]:[\\/]/.test(clean) ? clean : `${cwd}/${clean}`;
   return fileKind(abs).viewer === "html";
 };
 
@@ -40,12 +46,9 @@ const isCircuitPath = (path: string): boolean => {
 };
 
 const resolveCircuitViewerPath = (path: string): string => {
-  const hashIdx = path.indexOf("#");
-  const clean = hashIdx >= 0 ? path.slice(0, hashIdx) : path;
-  const hash = hashIdx >= 0 ? path.slice(hashIdx) : "";
+  const clean = stripHash(path);
   const dir = clean.includes("/") ? clean.slice(0, clean.lastIndexOf("/")) : "";
-  const viewerRel = dir ? `${dir}/output/schematic-viewer.html` : "output/schematic-viewer.html";
-  return `${viewerRel}${hash}`;
+  return dir ? `${dir}/output/schematic-viewer.html` : "output/schematic-viewer.html";
 };
 
 export function useOpenCanvasTarget() {
@@ -57,11 +60,11 @@ export function useOpenCanvasTarget() {
       if (target.kind === "file") {
         if (isCircuitPath(target.path)) {
           const viewerPath = resolveCircuitViewerPath(target.path);
-          openStaticTarget(target.cwd, viewerPath, { opener, background: false, bump });
+          openStaticTarget(target.cwd, viewerPath, { opener, background: false, bump: true });
           return;
         }
         if (isHtmlPath(target.cwd, target.path)) {
-          openStaticTarget(target.cwd, target.path, { opener, background, bump });
+          openStaticTarget(target.cwd, stripHash(target.path), { opener, background: false, bump: true });
           return;
         }
         // Canvas open → restrictCsp for document viewers (auto-open egress ≤ manual
