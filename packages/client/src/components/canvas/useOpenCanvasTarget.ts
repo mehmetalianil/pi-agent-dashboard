@@ -35,6 +35,19 @@ const isHtmlPath = (cwd: string, path: string): boolean => {
   return fileKind(abs).viewer === "html";
 };
 
+const isCircuitPath = (path: string): boolean => {
+  return /\.(kicad_sch|kicad_pcb)(#.*)?$/i.test(path);
+};
+
+const resolveCircuitViewerPath = (path: string): string => {
+  const hashIdx = path.indexOf("#");
+  const clean = hashIdx >= 0 ? path.slice(0, hashIdx) : path;
+  const hash = hashIdx >= 0 ? path.slice(hashIdx) : "";
+  const dir = clean.includes("/") ? clean.slice(0, clean.lastIndexOf("/")) : "";
+  const viewerRel = dir ? `${dir}/output/schematic-viewer.html` : "output/schematic-viewer.html";
+  return `${viewerRel}${hash}`;
+};
+
 export function useOpenCanvasTarget() {
   const { sessionId, openInSplit, openLiveTarget, openStaticTarget, openUrlTarget } = useSplitWorkspace();
   const [serverStatus, setServerStatus] = useState<ServerOpenStatus>("idle");
@@ -42,6 +55,11 @@ export function useOpenCanvasTarget() {
   const open = useCallback(
     (target: ViewTarget, { opener, background, bump }: OpenCanvasOpts): void => {
       if (target.kind === "file") {
+        if (isCircuitPath(target.path)) {
+          const viewerPath = resolveCircuitViewerPath(target.path);
+          openStaticTarget(target.cwd, viewerPath, { opener, background: false, bump });
+          return;
+        }
         if (isHtmlPath(target.cwd, target.path)) {
           openStaticTarget(target.cwd, target.path, { opener, background, bump });
           return;

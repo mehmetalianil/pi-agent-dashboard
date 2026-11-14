@@ -3228,6 +3228,7 @@ export default function App() {
             cwd={paneSession?.cwd ?? ""}
             cwdUnavailable={!!selectedId && archivedSummaryFailed.has(selectedId)}
             orientation={isMobile ? "v" : "h"}
+            defaultMode="split"
             fileResults={fileResults}
             onFilenameSearch={handleListFiles}
             changedFiles={selectedId ? changedOnDisk.get(selectedId) ?? null : null}

@@ -37,7 +37,7 @@ export interface SplitState {
   orientation: SplitOrientation;
 }
 
-export const DEFAULT_SPLIT_STATE: SplitState = { mode: "closed", ratio: 0.5, orientation: "h" };
+export const DEFAULT_SPLIT_STATE: SplitState = { mode: "split", ratio: 0.5, orientation: "h" };
 
 const isMode = (v: unknown): v is SplitMode => v === "closed" || v === "split" || v === "full";
 
